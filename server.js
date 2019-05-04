@@ -42,14 +42,14 @@ io.on('connection', socket => {
         var encryptedBytes = aesjs.utils.hex.toBytes(data)
         var aesMethod = new aesjs.ModeOfOperation.ofb(key, iv) // eslint-disable-line
         var decryptedBytes = aesMethod.decrypt(encryptedBytes)
-        var decryptedText = aesjs.utils.utf8.fromBytes(decryptedBytes)
+        // var decryptedText = aesjs.utils.utf8.fromBytes(decryptedBytes)
 
         fs.open(`./${event.file.base}`, 'w+', (err, fd) => {
           if (err) {
             console.log('Error occured', err)
             return
           }
-          let buf = Buffer.from(decryptedText)
+          let buf = Buffer.from(decryptedBytes)
           let pos = 0
           let offset = 0
           let len = buf.length

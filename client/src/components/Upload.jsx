@@ -1,45 +1,98 @@
 import React, { Component } from 'react'
-import Method from './cipherMethod'
+import Aesjs from 'aes-js'
+import Siofu from 'socketio-file-upload'
+
+import MethodPicker from './MethodPicker'
+import FilePicker from './FilePicker'
 import Progress from './Progress'
-import siofu from 'socketio-file-upload'
-import { socket } from "../api";
-// import {key, iv} from 'constants'
-import ProgressBar from 'react-bootstrap/ProgressBar'
+
+import { socket } from '../api'
+import { key, iv } from './constants'
+
+const promiseEvent = (instance, eventType) => new Promise(resolve => {
+  instance.addEventListener(eventType, resolve)
+})
+
 class Upload extends Component {
-  constructor(props) {
+  constructor (props) {
     super(props)
-    this.state = {progress: 0}
+    this.state = {
+      method: null,
+      file: null,
+      fileName: '',
+      fileExt: '',
+      progress: 0
+    }
   }
 
-  createFile = () => {
-
-  }
-  transfer =() => {
-    var uploader = new siofu(socket,{
-        useBuffer: true,
-        maxFileSize: 838860800
+  componentDidMount = () => {
+    socket.on('upload.progress', progress => {
+      this.setState({ progress: progress.percentage })
+      console.log('Progress', this.state.progress)
     })
-    console.log("transfer")
-    var file = new File( [(this.method.state.encryptedBytes)],this.method.state.name+"."+this.method.state.selectedOption, {type: this.method.state.myFile.type})
-    console.log(file)
-    uploader.submitFiles([file])
   }
-componentDidMount= () => {
-  socket.on('upload.progress', function(progress){
-    this.setState({progress: progress.percentage})
-    console.log(this.state.progress)
-}.bind(this))
-}
-  render() {
+
+  handleMethodPick = method => this.setState({ method })
+  handleFileNameChange = fileName => this.setState({ fileName })
+  handleFileExt = fileExt => this.setState({ fileExt })
+  handleFileChange = file => this.setState({ file })
+
+  transfer = async () => {
+    const uploader = new Siofu(socket, {
+      useBuffer: true,
+      maxFileSize: 838860800
+    })
+    const { file, method, fileName, fileExt } = this.state
+    const reader = new FileReader()
+    reader.readAsText(file)
+    await promiseEvent(reader, 'load')
+    let textBytes = Aesjs.utils.utf8.toBytes(reader.result)
+    let aesMode
+    let paddedData
+    switch (method) {
+      case 'ECB': {
+        aesMode = new Aesjs.ModeOfOperation.ecb(key) //eslint-disable-line
+        paddedData = Aesjs.padding.pkcs7.pad(textBytes)
+        break
+      }
+      case 'CBC': {
+        aesMode = new Aesjs.ModeOfOperation.cbc(key, iv) //eslint-disable-line
+        paddedData = Aesjs.padding.pkcs7.pad(textBytes)
+        break
+      }
+      case 'CFB': {
+        // The segment size is optional, and defaults to 1
+        aesMode = new Aesjs.ModeOfOperation.cfb(key, iv, 1) //eslint-disable-line
+        paddedData = textBytes
+        break
+      }
+      case 'OFB': {
+        aesMode = new Aesjs.ModeOfOperation.ofb(key, iv) //eslint-disable-line
+        paddedData = textBytes
+        break
+      }
+    }
+    let encryptedBytes = aesMode.encrypt(paddedData)
+    // let hexEncryptedData = Aesjs.utils.hex.fromBytes(encryptedBytes)
+    console.log('transfer')
+    const encryptedFile = new File(encryptedBytes, `${fileName}.${method}.${fileExt}`, { type: file.type })
+    console.log(encryptedFile)
+    uploader.submitFiles([encryptedFile])
+  }
+
+  render () {
+    const { fileName, progress } = this.state
     return (
       <div>
-          <Method ref={method => { this.method = method }}/>
-          <Progress ref={per => { this.per = per }}/>
-          <ProgressBar animated min={0} max={100} now={this.state.progress} />
-          <p><button onClick={this.transfer} >Upload File</button></p>
-          
+        <FilePicker
+          onFileExtSet={this.handleFileExt}
+          onFileChange={this.handleFileChange}
+          onFileNameChange={this.handleFileNameChange}
+          fileName={fileName} />
+        <MethodPicker onMethodPick={this.handleMethodPick} />
+        <Progress progress={progress} />
+        <button onClick={this.transfer}>Upload File</button>
       </div>
-      
     )
   }
 }
