@@ -17,7 +17,7 @@ class Upload extends Component {
   constructor (props) {
     super(props)
     this.state = {
-      method: null,
+      method: 'ECB',
       file: null,
       fileName: '',
       fileExt: '',
@@ -44,11 +44,14 @@ class Upload extends Component {
     })
     const { file, method, fileName, fileExt } = this.state
     const reader = new FileReader()
-    reader.readAsText(file)
+    reader.readAsArrayBuffer(file)
+   
     await promiseEvent(reader, 'load')
-    let textBytes = Aesjs.utils.utf8.toBytes(reader.result)
+
+    var textBytes = new Uint8Array(reader.result);
     let aesMode
     let paddedData
+    // eslint-disable-next-line default-case
     switch (method) {
       case 'ECB': {
         aesMode = new Aesjs.ModeOfOperation.ecb(key) //eslint-disable-line
@@ -73,11 +76,12 @@ class Upload extends Component {
       }
     }
     let encryptedBytes = aesMode.encrypt(paddedData)
-    // let hexEncryptedData = Aesjs.utils.hex.fromBytes(encryptedBytes)
-    console.log('transfer')
-    const encryptedFile = new File(encryptedBytes, `${fileName}.${method}.${fileExt}`, { type: file.type })
-    console.log(encryptedFile)
+    let arrayBuffer = encryptedBytes.buffer;
+    let blob  = new Blob([arrayBuffer], { type: file.type });
+    const encryptedFile = new File([blob], `${fileName}.${method}.${fileExt}`, { type: file.type })
+
     uploader.submitFiles([encryptedFile])
+   
   }
 
   render () {

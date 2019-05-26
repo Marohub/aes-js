@@ -11,15 +11,13 @@ const publicPath = path.join(__dirname, 'public')
 let server = http.createServer(app)
 let io = require('socket.io')(server)
 
-// const Buffer = require('buffer')
-
 app.use(express.static(publicPath))
 
 io.on('connection', socket => {
   console.log('New user connected')
   console.log(__dirname)
   var uploader = new Siofu()
-  uploader.dir = '.'
+  uploader.dir = './Upload'
   uploader.listen(socket)
   uploader.on('progress', event => {
     console.log(event.file.bytesLoaded / event.file.size)
@@ -27,24 +25,44 @@ io.on('connection', socket => {
       percentage: (event.file.bytesLoaded / event.file.size) * 100
     })
   })
-
+ 
   uploader.on('saved', event => {
     if (event.file.success) {
-      let data = ''
-      console.log('File Sent')
+      
+      var data = new Buffer(0)
       var readStream = fs.createReadStream(event.file.pathName)
       readStream.on('data', chunk => {
-        data += chunk
+        data = Buffer.concat([data,chunk])
       })
+      
+      let splitName = event.file.name.split('.')
+      let cipherMethod = splitName[splitName.length-2]
       readStream.on('end', () => {
         var key = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
         var iv = [21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36]
-        var encryptedBytes = aesjs.utils.hex.toBytes(data)
-        var aesMethod = new aesjs.ModeOfOperation.ofb(key, iv) // eslint-disable-line
-        var decryptedBytes = aesMethod.decrypt(encryptedBytes)
-        // var decryptedText = aesjs.utils.utf8.fromBytes(decryptedBytes)
-
-        fs.open(`./${event.file.base}`, 'w+', (err, fd) => {
+        let aesMode
+        switch (cipherMethod) {
+          case 'ECB': {
+            aesMode = new aesjs.ModeOfOperation.ecb(key) //eslint-disable-line
+            break
+          }
+          case 'CBC': {
+            aesMode = new aesjs.ModeOfOperation.cbc(key, iv) //eslint-disable-line
+            break
+          }
+          case 'CFB': {
+            // The segment size is optional, and defaults to 1
+            //TextMustBeAMultipleOfSegmentSize change paddedData if u wish to use different segment
+            aesMode = new aesjs.ModeOfOperation.cfb(key, iv, 1) //eslint-disable-line
+            break
+          }
+          case 'OFB': {
+            aesMode = new aesjs.ModeOfOperation.ofb(key, iv) //eslint-disable-line
+            break
+          }
+        }
+        var decryptedBytes = aesMode.decrypt(data)
+        fs.open(`./Upload/${splitName[0]}.${splitName[splitName.length-1]}`, 'w+', (err, fd) => {
           if (err) {
             console.log('Error occured', err)
             return
@@ -58,30 +76,10 @@ io.on('connection', socket => {
             console.log(buff)
           })
         })
-
-        // fs.writeFile("upload/Decrypted/"+event.file.base, arraybuffer);
-        // console.log(event)
-
-        // var fdata = decryptedText.replace(/^data:image\/\w+;base64,/, "");
-        //   fs.writeFile("upload/Decrypted/"+event.file.base,new Buffer(fdata, 'base64') , function(err) {
-        //     if(err) {
-        //         return console.log(err);
-        //     }
-        //     console.log("The file was saved!");
-        // })
       })
     } else {
       console.log('Something went wrong')
     }
-  })
-
-  // Error handler:
-  //   uploader.on("error", function(event){
-  //     console.log("Error from uploader", event);
-  // });
-
-  socket.on('change_username', data => {
-    socket.username = data.username
   })
 
   socket.on('disconnect', () => {
