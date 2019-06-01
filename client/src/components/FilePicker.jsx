@@ -6,17 +6,12 @@ class FilePicker extends Component {
   handleChange = e => {
     const [file] = e.target.files
     if (!file) return
-    if (file.size < 8192) {
-      alert('file size is lower than 1kB')
-    } else if (file.size >= 838860800) {
-      alert('file size is higher than 100 MB')
-    } else {
-      this.props.onFileChange(file)
-      const fileParts = file.name.split('.')
-      const ext = fileParts.pop()
-      this.props.onFileNameChange(fileParts.join('.'))
-      this.props.onFileExtSet(ext)
-    }
+
+    this.props.onFileChange(file)
+    const fileParts = file.name.split('.')
+    const ext = fileParts.pop()
+    this.props.onFileNameChange(fileParts.join('.'))
+    this.props.onFileExtSet(ext)
     // this.file.readAsText(file)
   }
 
