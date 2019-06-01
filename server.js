@@ -4,6 +4,9 @@ const path = require('path')
 const http = require('http')
 const fs = require('fs')
 var aesjs = require('aes-js')
+const JSEncrypt = require('node-jsencrypt')
+
+const crypt = new JSEncrypt()
 
 const app = express().use(Siofu.router)
 const port = process.env.PORT || 3001
@@ -11,14 +14,20 @@ const publicPath = path.join(__dirname, 'public')
 let server = http.createServer(app)
 let io = require('socket.io')(server)
 
-var key = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
-var iv = [21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36]
-
 app.use(express.static(publicPath))
 
 io.on('connection', socket => {
   console.log('New user connected')
   console.log(__dirname)
+  socket.emit('keys', { pk: crypt.getPublicKey() })
+  let key = []
+  let iv = []
+  socket.on('session', ({ key: ckey, iv: civ }) => {
+    const k = crypt.decrypt(ckey)
+    key = k.split(',').map(num => parseInt(num, 10))
+    const i = crypt.decrypt(civ)
+    iv = i.split(',').map(num => parseInt(num, 10))
+  })
   let fileMeta // { fileName, method, fileExt, fileType }
   let fileBytes = new Uint8Array()
   socket.on('meta', meta => { fileMeta = meta })

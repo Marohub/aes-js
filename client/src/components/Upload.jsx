@@ -5,13 +5,22 @@ import MethodPicker from './MethodPicker'
 import FilePicker from './FilePicker'
 import Progress from './Progress'
 
-import { socket } from '../api'
-import { key, iv } from './constants'
 import { Loader } from './Loader'
+import io from 'socket.io-client'
+
+import JSEncrypt from 'jsencrypt'
 
 const promiseEvent = (instance, eventType) => new Promise(resolve => {
   instance.addEventListener(eventType, resolve)
 })
+
+const generateKeyIV = () => {
+  const min = 1
+  const max = 255
+  const key = Array(16).fill(0).map(() => Math.floor(Math.random() * (max - min + 1)) + min)
+  const iv = Array(16).fill(0).map(() => Math.floor(Math.random() * (max - min + 1)) + min)
+  return { key, iv }
+}
 
 const CHUNK_SIZE = 500000
 
@@ -24,14 +33,23 @@ class Upload extends Component {
       fileName: '',
       fileExt: '',
       progress: 0,
-      isLoading: false
+      isLoading: false,
+      pk: '',
+      key: [],
+      iv: []
     }
+    this.socket = null
   }
 
   componentDidMount = () => {
-    socket.on('upload.progress', progress => {
-      this.setState({ progress: progress.percentage })
-      console.log('Progress', this.state.progress)
+    this.socket = io.connect('localhost:3001').on('keys', ({ pk }) => {
+      const { key, iv } = generateKeyIV()
+      this.setState({ pk, key, iv })
+      const crypt = new JSEncrypt()
+      crypt.setPublicKey(pk)
+      const ckey = crypt.encrypt(key.join(','))
+      const civ = crypt.encrypt(iv.join(','))
+      this.socket.emit('session', { key: ckey, iv: civ })
     })
   }
 
@@ -41,9 +59,9 @@ class Upload extends Component {
   handleFileChange = file => this.setState({ file })
 
   transfer = async () => {
-    const { file, method, fileName, fileExt } = this.state
+    const { file, method, fileName, fileExt, key, iv } = this.state
     this.setState({ isLoading: true })
-    socket.emit('meta', { fileName, method, fileExt, type: file.type })
+    this.socket.emit('meta', { fileName, method, fileExt, type: file.type })
 
     const reader = new FileReader()
     reader.readAsArrayBuffer(file)
@@ -53,7 +71,7 @@ class Upload extends Component {
     let textBytes = new Uint8Array(reader.result)
 
     const chunksCount = textBytes.length / CHUNK_SIZE
-    socket.on('progress', ({ n: nChunk }) => {
+    this.socket.on('progress', ({ n: nChunk }) => {
       this.setState({ progress: nChunk / chunksCount * 100 })
     })
     let i = 0
@@ -89,17 +107,17 @@ class Upload extends Component {
       let encryptedBytes = aesMode.encrypt(paddedData)
       let arrayBuffer = encryptedBytes.buffer
 
-      socket.emit('chunk', { buffer: arrayBuffer, n, size: chunk.length })
+      this.socket.emit('chunk', { buffer: arrayBuffer, n, size: chunk.length })
       n++
       i += CHUNK_SIZE
     }
-    socket.emit('finished')
+    this.socket.emit('finished')
     //
     // const encryptedFile = new File([blob], `${fileName}.${method}.${fileExt}`, { type: file.type })
     // console.log(arrayBuffer.byteLength)
     // uploader.submitFiles([encryptedFile])
 
-    socket.on('received', () => {
+    this.socket.on('received', () => {
       console.log('received')
       this.setState({ isLoading: false })
     })
