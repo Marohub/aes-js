@@ -1,33 +1,44 @@
 const express = require('express')
-const Siofu = require('socketio-file-upload')
 const path = require('path')
 const http = require('http')
 const fs = require('fs')
 var aesjs = require('aes-js')
 const JSEncrypt = require('node-jsencrypt')
+const crypto = require('crypto')
+const { openKey, paths } = require('./pks')
 
-const crypt = new JSEncrypt()
+let crypt = new JSEncrypt()
 
-const app = express().use(Siofu.router)
+const app = express()
 const port = process.env.PORT || 3001
 const publicPath = path.join(__dirname, 'public')
 let server = http.createServer(app)
 let io = require('socket.io')(server)
+
+const fakeKey = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
 
 app.use(express.static(publicPath))
 
 io.on('connection', socket => {
   console.log('New user connected')
   console.log(__dirname)
+  console.log(crypt.getPrivateKey())
   socket.emit('keys', { pk: crypt.getPublicKey() })
+
   let key = []
   let iv = []
   socket.on('session', ({ key: ckey, iv: civ }) => {
-    const k = crypt.decrypt(ckey)
-    key = k.split(',').map(num => parseInt(num, 10))
-    const i = crypt.decrypt(civ)
-    iv = i.split(',').map(num => parseInt(num, 10))
+    try {
+      const k = crypt.decrypt(ckey)
+      key = k.split(',').map(num => parseInt(num, 10))
+      const i = crypt.decrypt(civ)
+      iv = i.split(',').map(num => parseInt(num, 10))
+    } catch (e) {
+      key = fakeKey
+      iv = fakeKey
+    }
   })
+
   let fileMeta // { fileName, method, fileExt, fileType }
   let fileBytes = new Uint8Array()
   socket.on('meta', meta => { fileMeta = meta })
@@ -83,6 +94,20 @@ io.on('connection', socket => {
   })
 })
 
-server.listen(port, () => {
-  console.log(`Server is up on port ${port}`)
-})
+const setup = async secret => {
+  try {
+    if (secret) {
+      const hash = crypto.createHmac('md5', secret).digest()
+      crypt.setPublicKey(await openKey(paths.PUBLIC_PATH))
+      crypt.setPrivateKey(await openKey(paths.PRIVATE_PATH, hash))
+    }
+  } catch (e) {
+    crypt = new JSEncrypt()
+  } finally {
+    server.listen(port, () => {
+      console.log(`Server is up on port ${port}`)
+    })
+  }
+}
+
+setup(process.argv[2])
